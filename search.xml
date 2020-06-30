@@ -1,0 +1,120 @@
+<?xml version="1.0" encoding="utf-8"?>
+<search>
+  <entry>
+    <title>k8s部署篇</title>
+    <url>/blog/2020/06/30/k8s-deploy/</url>
+    <content><![CDATA[<h2 id="Centos"><a href="#Centos" class="headerlink" title="Centos"></a>Centos</h2><p>参考这边文章即可，从部署到验证</p>
+<p><a href="https://www.cnblogs.com/tylerzhou/p/10971336.html" target="_blank" rel="noopener">使用kubernetes 官网工具kubeadm部署kubernetes(使用阿里云镜像)</a></p>
+<h2 id="Raspberry-Pi-4-cluster"><a href="#Raspberry-Pi-4-cluster" class="headerlink" title="Raspberry Pi 4 cluster"></a>Raspberry Pi 4 cluster</h2><h3 id="引言"><a href="#引言" class="headerlink" title="引言"></a>引言</h3><p>这里主要参考了下面的教程：</p>
+<ul>
+<li><a href="https://gist.github.com/aaronkjones/d996f1a441bc80875fd4929866ca65ad" target="_blank" rel="noopener">https://gist.github.com/aaronkjones/d996f1a441bc80875fd4929866ca65ad</a></li>
+<li><a href="https://github.com/alexellis/k8s-on-raspbian/blob/master/GUIDE.md" target="_blank" rel="noopener">https://github.com/alexellis/k8s-on-raspbian/blob/master/GUIDE.md</a></li>
+</ul>
+<h3 id="系统准备"><a href="#系统准备" class="headerlink" title="系统准备"></a>系统准备</h3><p>这里的准备系统是要准备树莓派操作系统，一般来讲运行kubernetes这么大的系统，最好的系统选择方式为轻量级的操作系统，这里推荐操作系统：</p>
+<ul>
+<li>Raspbian Stretch Lite - <a href="https://www.raspberrypi.org/downloads/raspberry-pi-os/" target="_blank" rel="noopener">https://www.raspberrypi.org/downloads/raspberry-pi-os/</a></li>
+</ul>
+<blockquote>
+<p>官方系统的最大好处是软件支持的源比较丰富，不要尝试诸如<code>Centos</code>等在树莓派上偏冷门的系统，因为国内源很少</p>
+</blockquote>
+<h3 id="树莓派系统安装"><a href="#树莓派系统安装" class="headerlink" title="树莓派系统安装"></a>树莓派系统安装</h3><p>在Macos上的安装比较简单，下载完镜像后用 <code>balenaEtcher</code> 烧录到SD卡中，再根据教程<a href="https://shumeipai.nxez.com/2017/09/13/raspberry-pi-network-configuration-before-boot.html" target="_blank" rel="noopener">无屏幕和键盘配置树莓派WiFi和SSH</a> 即可ssh登录</p>
+<h3 id="初始化系统"><a href="#初始化系统" class="headerlink" title="初始化系统"></a>初始化系统</h3><p>更改主机名，修改密码以及连接Wi-Fi等工作都可以通过 raspi-config 命令来完成。</p>
+<ul>
+<li>k8s-master-1</li>
+<li>k8s-worker-1</li>
+<li>k8s-worker-2</li>
+</ul>
+<h3 id="Master节点设置"><a href="#Master节点设置" class="headerlink" title="Master节点设置"></a>Master节点设置</h3><h4 id="设置静态IP"><a href="#设置静态IP" class="headerlink" title="设置静态IP"></a>设置静态IP</h4><figure class="highlight plain"><table><tr><td class="code"><pre><span class="line">$ cat &lt;&lt; EOF &gt;&gt; &#x2F;etc&#x2F;dhcpcd.conf</span><br><span class="line">interface wlan0</span><br><span class="line">static ip_address&#x3D;192.168.0.100&#x2F;24</span><br><span class="line">static routers&#x3D;192.168.0.1</span><br><span class="line">static domain_name_servers&#x3D;8.8.8.8</span><br><span class="line">EOF</span><br></pre></td></tr></table></figure>
+
+<p>其他机器相同设置，比如101, 102, 103，上面的设置是基于wifi连接，如果你的树莓派是通过网线连接，则需要把 <code>interface wlan0</code> 换成 <code>profile eth0</code></p>
+<h4 id="设置网络代理"><a href="#设置网络代理" class="headerlink" title="设置网络代理"></a>设置网络代理</h4><p>这一步非常重要，因为树莓派是armhfp架构的，国内源对这个架构支持不好，可能安装的Docker不能在上面工作，因此需要设置网络代理，通过代理下载软件。</p>
+<figure class="highlight plain"><table><tr><td class="code"><pre><span class="line">$ export http_proxy&#x3D;&quot;http:&#x2F;&#x2F;192.168.3.21:7890&quot;</span><br><span class="line">$ export https_proxy&#x3D;&quot;http:&#x2F;&#x2F;192.168.3.21:7890&quot;</span><br></pre></td></tr></table></figure>
+
+<h4 id="安装docker"><a href="#安装docker" class="headerlink" title="安装docker"></a>安装docker</h4><p>这个步骤依赖于上面的网络代理设置的，如果设置成功了，那么这步才可能成功执行。</p>
+<figure class="highlight plain"><table><tr><td class="code"><pre><span class="line">$ curl -sSL get.docker.com | sh &amp;&amp; sudo usermod pi -aG docker</span><br><span class="line">$ newgrp docker</span><br></pre></td></tr></table></figure>
+
+<h4 id="关闭swap"><a href="#关闭swap" class="headerlink" title="关闭swap"></a>关闭swap</h4><p>在k8s 1.7以后，如果swap开启会报错</p>
+<figure class="highlight plain"><table><tr><td class="code"><pre><span class="line">$ sudo dphys-swapfile swapoff &amp;&amp; \</span><br><span class="line">  sudo dphys-swapfile uninstall &amp;&amp; \</span><br><span class="line">  sudo update-rc.d dphys-swapfile remove</span><br></pre></td></tr></table></figure>
+
+<p> 官方系统是基于Debian的，需要运行：</p>
+ <figure class="highlight plain"><table><tr><td class="code"><pre><span class="line">sudo systemctl disable dphys-swapfile</span><br></pre></td></tr></table></figure>
+
+<p>为了检测是否成功关闭，可以执行下面的命令，如果成功执行了，那么下面的命令将不会有任何的输出。</p>
+<figure class="highlight plain"><table><tr><td class="code"><pre><span class="line">$ sudo swapon --summary</span><br></pre></td></tr></table></figure>
+
+<h4 id="编辑-boot-cmdline-txt"><a href="#编辑-boot-cmdline-txt" class="headerlink" title="编辑 /boot/cmdline.txt"></a>编辑 /boot/cmdline.txt</h4><p>打开 /boot/cmdline.txt，并在末尾添加如下指令。</p>
+<figure class="highlight plain"><table><tr><td class="code"><pre><span class="line">cgroup_enable&#x3D;cpuset cgroup_memory&#x3D;1 cgroup_enable&#x3D;memory</span><br></pre></td></tr></table></figure>
+
+<blockquote>
+<p>该步骤执行完成后，一定要重启！否则后面会有错误。</p>
+</blockquote>
+<h4 id="安装kubernetes"><a href="#安装kubernetes" class="headerlink" title="安装kubernetes"></a>安装kubernetes</h4><p>该步骤也同样依赖于设置网络代理那一步骤！</p>
+<p>为了保持整个集群的k8s版本统一，这里指定安装版本，我安装的是1.18.3，你们可以根据自己的情况安装，因为k8s版本和docker版本是有对应关系的</p>
+<figure class="highlight plain"><table><tr><td class="code"><pre><span class="line">$ sudo su # 切换到root用户</span><br><span class="line">$ curl -s https:&#x2F;&#x2F;packages.cloud.google.com&#x2F;apt&#x2F;doc&#x2F;apt-key.gpg | apt-key add - &amp;&amp; \</span><br><span class="line">echo &quot;deb http:&#x2F;&#x2F;apt.kubernetes.io&#x2F; kubernetes-xenial main&quot; | tee &#x2F;etc&#x2F;apt&#x2F;sources.list.d&#x2F;kubernetes.list &amp;&amp; \</span><br><span class="line">apt-get update -q &amp;&amp; \</span><br><span class="line">apt-get install -qy kubeadm&#x3D;1.18.3-00 kubectl&#x3D;1.18.3-00 kubelet&#x3D;1.18.3-00</span><br></pre></td></tr></table></figure>
+
+<blockquote>
+<p>切到root用户后，需要检查网络代理是否正常配置。</p>
+</blockquote>
+<p>k8s安装完成后，可以将命令补全工具加入~/.bashrc等文件中</p>
+<figure class="highlight plain"><table><tr><td class="code"><pre><span class="line">source &lt;(kubectl completion bash)</span><br><span class="line">source &lt;(kubeadm completion bash)</span><br></pre></td></tr></table></figure>
+
+<h4 id="修改docker的网络代理"><a href="#修改docker的网络代理" class="headerlink" title="修改docker的网络代理"></a>修改docker的网络代理</h4><p>这一步非常重要！因为我们可能需要pull很多国内不能访问的镜像，因此需要设置docker网络代理，因为默认情况下，docker服务不是通过systemctl管理的，因此需要创建一个系统服务，具体的命令如下：</p>
+<figure class="highlight plain"><table><tr><td class="code"><pre><span class="line">$ mkdir -pv &#x2F;etc&#x2F;systemd&#x2F;system&#x2F;docker.service.d</span><br><span class="line">$ cat &lt;&lt; EOF &gt;&gt; &#x2F;etc&#x2F;systemd&#x2F;system&#x2F;docker.service.d&#x2F;http-proxy.conf</span><br><span class="line">[Service]</span><br><span class="line">Environment&#x3D;&quot;HTTP_PROXY&#x3D;http:&#x2F;&#x2F;172.16.3.12:1080&#x2F;&quot; &quot;HTTPS_PROXY&#x3D;http:&#x2F;&#x2F;172.16.3.12:1080&#x2F;&quot;</span><br><span class="line">EOF </span><br><span class="line">$ systemctl daemon-reload</span><br><span class="line">$ systemctl restart docker</span><br></pre></td></tr></table></figure>
+
+<blockquote>
+<p>参考：<a href="https://docs.docker.com/config/daemon/systemd/" target="_blank" rel="noopener">https://docs.docker.com/config/daemon/systemd/</a></p>
+</blockquote>
+<h4 id="预先pull镜像"><a href="#预先pull镜像" class="headerlink" title="预先pull镜像"></a>预先pull镜像</h4><figure class="highlight plain"><table><tr><td class="code"><pre><span class="line">$ kubeadm config images pull -v3 --kubernetes-version&#x3D;v1.18.3 --v&#x3D;6</span><br></pre></td></tr></table></figure>
+
+<h4 id="初始化master节点"><a href="#初始化master节点" class="headerlink" title="初始化master节点"></a>初始化master节点</h4><figure class="highlight plain"><table><tr><td class="code"><pre><span class="line">$ kubeadm init \ </span><br><span class="line">	--apiserver-advertise-address&#x3D;192.168.3.23 \</span><br><span class="line">	--kubernetes-version&#x3D;v1.18.3 \</span><br><span class="line">	--pod-network-cidr&#x3D;10.244.0.0&#x2F;16</span><br></pre></td></tr></table></figure>
+
+<p>初始化命令说明：</p>
+<figure class="highlight plain"><table><tr><td class="code"><pre><span class="line">--apiserver-advertise-address</span><br></pre></td></tr></table></figure>
+
+<p>指明用 Master 的哪个 interface 与 Cluster 的其他节点通信。如果 Master 有多个 interface，建议明确指定，如果不指定，kubeadm 会自动选择有默认网关的 interface。</p>
+<figure class="highlight plain"><table><tr><td class="code"><pre><span class="line">--pod-network-cidr</span><br></pre></td></tr></table></figure>
+
+<p>指定 Pod 网络的范围。Kubernetes 支持多种网络方案，而且不同网络方案对 –pod-network-cidr 有自己的要求，这里设置为 10.244.0.0/16 是因为我们将使用 flannel 网络方案，必须设置成这个 CIDR。</p>
+<figure class="highlight plain"><table><tr><td class="code"><pre><span class="line">--kubernetes-version&#x3D;v1.18.3</span><br></pre></td></tr></table></figure>
+
+<p>关闭版本探测，因为它的默认值是stable-1，会导致从<a href="https://dl.k8s.io/release/stable-1.txt下载最新的版本号，我们可以将其指定为固定版本（最新版：v1.18.3）来跳过网络请求。" target="_blank" rel="noopener">https://dl.k8s.io/release/stable-1.txt下载最新的版本号，我们可以将其指定为固定版本（最新版：v1.18.3）来跳过网络请求。</a></p>
+<p>这步如果成功的话，会打印下面的消息：</p>
+<figure class="highlight plain"><table><tr><td class="code"><pre><span class="line">Your Kubernetes master has initialized successfully!</span><br><span class="line"></span><br><span class="line">To start using your cluster, you need to run the following as a regular user:</span><br><span class="line"></span><br><span class="line">  mkdir -p $HOME&#x2F;.kube</span><br><span class="line">  sudo cp -i &#x2F;etc&#x2F;kubernetes&#x2F;admin.conf $HOME&#x2F;.kube&#x2F;config</span><br><span class="line">  sudo chown $(id -u):$(id -g) $HOME&#x2F;.kube&#x2F;config</span><br><span class="line"></span><br><span class="line">You should now deploy a pod network to the cluster.</span><br><span class="line">Run &quot;kubectl apply -f [podnetwork].yaml&quot; with one of the options listed at:</span><br><span class="line">  https:&#x2F;&#x2F;kubernetes.io&#x2F;docs&#x2F;concepts&#x2F;cluster-administration&#x2F;addons&#x2F;</span><br><span class="line"></span><br><span class="line">You can now join any number of machines by running the following on each node</span><br><span class="line">as root:</span><br><span class="line"></span><br><span class="line">  kubeadm join 172.16.3.1:6443 --token xo78oj.02cia85vdh285aqj --discovery-token-ca-cert-hash sha256:9517c72036f8261ac912adaf8339b65583fdaa7dbb8dd60054c6e84e8880a3fd</span><br></pre></td></tr></table></figure>
+
+<p>然后根据输出的提示，执行下面的语句：</p>
+<figure class="highlight plain"><table><tr><td class="code"><pre><span class="line">$ mkdir -p $HOME&#x2F;.kube</span><br><span class="line">$ sudo cp -i &#x2F;etc&#x2F;kubernetes&#x2F;admin.conf $HOME&#x2F;.kube&#x2F;config</span><br><span class="line">$ sudo chown $(id -u):$(id -g) $HOME&#x2F;.kube&#x2F;config</span><br></pre></td></tr></table></figure>
+
+<blockquote>
+<p>上面的语句需要在pi用户下执行！否则不管用！</p>
+</blockquote>
+<p>需要这些配置命令的原因是：Kubernetes 集群默认需要加密方式访问。所以，这几条命令，就是将刚刚部署生成的 Kubernetes 集群的安全配置文件，保存到当前用户的.kube 目录下，kubectl 默认会使用这个目录下的授权信息访问 Kubernetes 集群。<br>如果不这么做的话，我们每次都需要通过 export KUBECONFIG 环境变量告诉 kubectl 这个安全配置文件的位置。<br>配置完成后centos用户就可以使用 kubectl 命令管理集群了。</p>
+<h3 id="验证"><a href="#验证" class="headerlink" title="验证"></a>验证</h3><p>确认各个组件都处于healthy状态，查看节点状态</p>
+<figure class="highlight plain"><table><tr><td class="code"><pre><span class="line">[pi@k8s-master-1 ~]$ kubectl get nodes </span><br><span class="line">NAME            STATUS     ROLES    AGE   VERSION</span><br><span class="line">k8s-master-1   NotReady   master   36m   v1.18.3</span><br></pre></td></tr></table></figure>
+
+<p>你会发现master节点NotReady的消息，这是因为我们的网络需要依赖于flannel网络组件  </p>
+<p>要让 Kubernetes Cluster 能够工作，必须安装 Pod 网络，否则 Pod 之间无法通信。<br>Kubernetes 支持多种网络方案，这里我们使用 flannel<br>执行如下命令部署 flannel：</p>
+<figure class="highlight plain"><table><tr><td class="code"><pre><span class="line">kubectl apply -f https:&#x2F;&#x2F;raw.githubusercontent.com&#x2F;coreos&#x2F;flannel&#x2F;master&#x2F;Documentation&#x2F;kube-flannel.yml</span><br></pre></td></tr></table></figure>
+
+<p>然后在每个节点包括Master都执行以下命令:</p>
+<figure class="highlight plain"><table><tr><td class="code"><pre><span class="line">sudo sysctl net.bridge.bridge-nf-call-iptables&#x3D;1</span><br></pre></td></tr></table></figure>
+
+<p>部署完成后，因为Pod创建需要稍微等待几秒钟，我们可以通过 kubectl get 重新检查 Pod 的状态：</p>
+<figure class="highlight plain"><table><tr><td class="code"><pre><span class="line">pi@k8s-worker-1:~ $ kubectl get pod -n kube-system -o wide</span><br><span class="line">NAME                                   READY   STATUS    RESTARTS   AGE   IP             NODE           NOMINATED NODE   READINESS GATES</span><br><span class="line">coredns-66bff467f8-4vfmt               1&#x2F;1     Running   0          14h   10.244.0.3     k8s-master-1   &lt;none&gt;           &lt;none&gt;</span><br><span class="line">coredns-66bff467f8-6ln2g               1&#x2F;1     Running   0          14h   10.244.0.2     k8s-master-1   &lt;none&gt;           &lt;none&gt;</span><br><span class="line">etcd-k8s-master-1                      1&#x2F;1     Running   0          14h   192.168.3.23   k8s-master-1   &lt;none&gt;           &lt;none&gt;</span><br><span class="line">kube-apiserver-k8s-master-1            1&#x2F;1     Running   0          14h   192.168.3.23   k8s-master-1   &lt;none&gt;           &lt;none&gt;</span><br><span class="line">kube-controller-manager-k8s-master-1   1&#x2F;1     Running   2          14h   192.168.3.23   k8s-master-1   &lt;none&gt;           &lt;none&gt;</span><br><span class="line">kube-flannel-ds-arm-lc28w              1&#x2F;1     Running   0          14h   192.168.3.23   k8s-master-1   &lt;none&gt;           &lt;none&gt;</span><br><span class="line">kube-flannel-ds-arm-nq7hq              1&#x2F;1     Running   2          10h   192.168.3.25   k8s-worker-2   &lt;none&gt;           &lt;none&gt;</span><br><span class="line">kube-proxy-946hr                       1&#x2F;1     Running   0          14h   192.168.3.23   k8s-master-1   &lt;none&gt;           &lt;none&gt;</span><br><span class="line">kube-proxy-vnx7l                       1&#x2F;1     Running   0          11h   192.168.3.24   k8s-worker-1   &lt;none&gt;           &lt;none&gt;</span><br><span class="line">kube-proxy-zt8bl                       1&#x2F;1     Running   0          10h   192.168.3.25   k8s-worker-2   &lt;none&gt;           &lt;none&gt;</span><br><span class="line">kube-scheduler-k8s-master-1            1&#x2F;1     Running   2          14h   192.168.3.23   k8s-master-1   &lt;none&gt;           &lt;none&gt;</span><br></pre></td></tr></table></figure>
+
+<figure class="highlight plain"><table><tr><td class="code"><pre><span class="line">[pi@k8s-master-1 ~]$ kubectl get nodes </span><br><span class="line">NAME          STATUS     ROLES    AGE   VERSION</span><br><span class="line">k8s-master-1   Ready   master   36m   v1.18.3</span><br></pre></td></tr></table></figure>
+
+<p>至此，Kubernetes 的 Master 节点就部署完成了。如果你只需要一个单节点的 Kubernetes，现在你就可以使用了。不过，在默认情况下，Kubernetes 的 Master 节点是不能运行用户 Pod 的。</p>
+<h3 id="部署Worker节点"><a href="#部署Worker节点" class="headerlink" title="部署Worker节点"></a>部署Worker节点</h3><p>Kubernetes 的 Worker 节点跟 Master 节点几乎是相同的，它们运行着的都是一个 kubelet 组件。唯一的区别在于，在 kubeadm init 的过程中，kubelet 启动后，Master 节点上还会自动运行 kube-apiserver、kube-scheduler、kube-controller-manger 这三个系统 Pod。</p>
+<p>节点机器只要k8s安装完成既可以，会在join的时候拉取master上的镜像，我们在 k8s-worker-1 和 k8s-worker-1 上分别执行如下命令，将其注册到 Cluster 中：</p>
+<figure class="highlight plain"><table><tr><td class="code"><pre><span class="line">#执行以下命令将节点接入集群</span><br><span class="line">kubeadm join 192.168.92.56:6443 --token 67kq55.8hxoga556caxty7s --discovery-token-ca-cert-hash sha256:7d50e704bbfe69661e37c5f3ad13b1b88032b6b2b703ebd4899e259477b5be69</span><br><span class="line"></span><br><span class="line">#如果执行kubeadm init时没有记录下加入集群的命令，可以通过以下命令重新创建</span><br><span class="line">kubeadm token create --print-join-command</span><br></pre></td></tr></table></figure>
+
+<p>然后根据提示，我们可以通过 kubectl get nodes 查看节点的状态：</p>
+<figure class="highlight plain"><table><tr><td class="code"><pre><span class="line">pi@k8s-master-1:~ $ kubectl get nodes</span><br><span class="line">NAME           STATUS   ROLES    AGE   VERSION</span><br><span class="line">k8s-master-1   Ready    master   14h   v1.18.3</span><br><span class="line">k8s-worker-1   Ready    &lt;none&gt;   11h   v1.18.3</span><br><span class="line">k8s-worker-2   Ready    &lt;none&gt;   10h   v1.18.3</span><br></pre></td></tr></table></figure>
+
+<p>至此k8s集群搭建完成，更详细的问题查找和集群验证，可以查看上面centos的文章</p>
+]]></content>
+      <tags>
+        <tag>k8s</tag>
+      </tags>
+  </entry>
+</search>
