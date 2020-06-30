@@ -21,6 +21,7 @@ tags: k8s
 * https://github.com/alexellis/k8s-on-raspbian/blob/master/GUIDE.md
 
 ### 系统准备
+
 这里的准备系统是要准备树莓派操作系统，一般来讲运行kubernetes这么大的系统，最好的系统选择方式为轻量级的操作系统，这里推荐操作系统：
 
 * Raspbian Stretch Lite - https://www.raspberrypi.org/downloads/raspberry-pi-os/
@@ -263,7 +264,7 @@ k8s-master-1   Ready   master   36m   v1.18.3
 
 至此，Kubernetes 的 Master 节点就部署完成了。如果你只需要一个单节点的 Kubernetes，现在你就可以使用了。不过，在默认情况下，Kubernetes 的 Master 节点是不能运行用户 Pod 的。
 
-## 部署Worker节点
+### 部署Worker节点
 
 Kubernetes 的 Worker 节点跟 Master 节点几乎是相同的，它们运行着的都是一个 kubelet 组件。唯一的区别在于，在 kubeadm init 的过程中，kubelet 启动后，Master 节点上还会自动运行 kube-apiserver、kube-scheduler、kube-controller-manger 这三个系统 Pod。
 
