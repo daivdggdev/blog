@@ -637,10 +637,10 @@ hexo-generator-index@^1.0.0:
   dependencies:
     hexo-pagination "1.0.0"
 
-hexo-generator-searchdb@^1.3.0:
-  version "1.3.0"
-  resolved "https://registry.npm.taobao.org/hexo-generator-searchdb/download/hexo-generator-searchdb-1.3.0.tgz#c76b5a454508142e74af1a9ea1fa926aa2b5585d"
-  integrity sha1-x2taRUUIFC50rxqeofqSaqK1WF0=
+hexo-generator-searchdb@1.2.1:
+  version "1.2.1"
+  resolved "https://registry.npm.taobao.org/hexo-generator-searchdb/download/hexo-generator-searchdb-1.2.1.tgz#9afc0a912df72deb15b69b7738197c075d0af916"
+  integrity sha1-mvwKkS33LesVtpt3OBl8B10K+RY=
   dependencies:
     nunjucks "^3.2.1"
 
